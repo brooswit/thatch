@@ -7,10 +7,7 @@ import type { Connection } from "../registry/connection.js";
 /** What a transport must offer: push a notification, and say whether a stream is there to carry it. */
 export interface Pushable { notify(method: string, params: unknown): Promise<void>; readonly channelAttached: boolean }
 
-export type SendListener = (c: Connection, frame: Frame, delivery: Delivery) => void;
-
 export class Sender {
-  private listeners: SendListener[] = [];
   constructor(private readonly registry: Registry<Pushable>) {}
 
   async send(id: string, frame: Frame): Promise<Delivery> {
@@ -25,7 +22,6 @@ export class Sender {
         : await entry.handle.notify(CHANNEL_METHOD, { content: frame.content, meta: frame.meta })
             .then((): Delivery => ({ claim: "C2" }))
             .catch((e): Delivery => ({ claim: "refused", reason: "closed-mid-send", detail: String(e?.message ?? e) }));
-    if (entry) for (const l of this.listeners) l(entry.record, frame, delivery);
     return delivery;
   }
 
@@ -37,10 +33,5 @@ export class Sender {
 
   sendAll(frame: Frame, opts: { where?: (c: Connection) => boolean } = {}) {
     return this.sendMany(this.registry.list().filter(opts.where ?? (() => true)).map((c) => c.id), frame);
-  }
-
-  onSend(fn: SendListener): () => void {
-    this.listeners.push(fn);
-    return () => { const i = this.listeners.indexOf(fn); if (i >= 0) this.listeners.splice(i, 1); };
   }
 }

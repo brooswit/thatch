@@ -24,9 +24,8 @@ export interface McpHandle {
   sendAll(frame: Frame, opts?: { where?: (c: Connection) => boolean }): ReturnType<Sender["sendAll"]>;
   on(event: "connect", fn: (c: Connection) => void): () => void;
   on(event: "disconnect", fn: (c: Connection, reason: DisconnectReason) => void): () => void;
-  on(event: "send", fn: (c: Connection, frame: Frame, delivery: Delivery) => void): () => void;
   once(event: "connect" | "disconnect"): Promise<Connection>;
-  off(event: "connect" | "disconnect" | "send", fn: (...a: any[]) => void): void;
+  off(event: "connect" | "disconnect", fn: (...a: any[]) => void): void;
   closeAll(): Promise<void>;
 }
 
@@ -72,9 +71,9 @@ function build(o: McpOptions) {
     send: (id, f) => sender.send(id, f),
     sendMany: (ids, f) => sender.sendMany(ids, f),
     sendAll: (f, opts) => sender.sendAll(f, opts),
-    on: ((event: string, fn: any) => event === "send" ? sender.onSend(fn) : registry.on(event as "connect" | "disconnect", fn)) as McpHandle["on"],
+    on: ((event: "connect" | "disconnect", fn: any) => registry.on(event, fn)) as McpHandle["on"],
     once: (event) => registry.once(event),
-    off: ((event: string, fn: any) => event === "send" ? undefined : registry.off(event as "connect" | "disconnect", fn)) as McpHandle["off"],
+    off: ((event: "connect" | "disconnect", fn: any) => registry.off(event, fn)) as McpHandle["off"],
     closeAll: async () => { for (const c of registry.list()) await closeById(c.id); },
   };
 

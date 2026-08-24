@@ -36,12 +36,10 @@ describe("Sender (uuid)", () => {
     const { s, add } = rig(); add("a", { throws: true });
     expect(await s.send("a", { content: "x", meta: {} })).toMatchObject({ claim: "refused", reason: "closed-mid-send", detail: "gone" });
   });
-  test("sendMany splits sent/refused by id; sendAll filters; onSend fires", async () => {
+  test("sendMany splits sent/refused by id; sendAll filters by where", async () => {
     const { s, add } = rig(); add("a"); add("b"); add("c", { attached: false });
-    const sends: string[] = []; const off = s.onSend((c) => sends.push(c.id));
     expect(await s.sendMany(["a", "ghost"], { content: "x", meta: {} })).toEqual({ sent: ["a"], refused: [{ id: "ghost", reason: "not-connected" }] });
     expect((await s.sendAll({ content: "x", meta: {} })).sent.sort()).toEqual(["a", "b"]);
     expect((await s.sendAll({ content: "x", meta: {} }, { where: (c) => c.id === "b" })).sent).toEqual(["b"]);
-    off(); expect(sends.length).toBeGreaterThan(0);
   });
 });
