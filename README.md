@@ -36,7 +36,7 @@ Pushing into a session can fail in ways the MCP SDK hides: a connection can be r
 
 ## API
 
-- `thatch({ tools?, path?, history?, serverInfo? })` → `{ plugin, mcp }`. Every client is accepted and assigned a UUID; reject unwanted ones with an Elysia guard on the route.
+- `thatch({ tools?, auth?, path?, history?, serverInfo? })` → `{ plugin, mcp }`. Every client is accepted and assigned a UUID. Gate connections with `auth(req) => boolean` (default accepts all); it does not identify — an accepted client still gets a UUID and holds its headers.
 - `mcp.connections`: `list()`, `get(id)`, `has(id)`, `count()`, `find(pred)`, `filter(pred)`.
 - `mcp.send(id, frame)`, `mcp.sendMany(ids, frame)`, `mcp.sendAll(frame, { where? })`.
 - `mcp.on/once/off` for `connect` / `disconnect` / `send`.

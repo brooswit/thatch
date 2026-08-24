@@ -8,6 +8,13 @@ export interface ToolDef<Shape extends z.ZodRawShape = z.ZodRawShape> {
 }
 
 export interface McpOptions {
+  /**
+   * Accept or reject a connecting client. Return false to refuse it (401).
+   * Sees the raw request, so it can read any header. Default: accept everyone.
+   * This is a GATE, not identity — an accepted client still gets a UUID and
+   * holds its headers.
+   */
+  auth?: (req: Request) => boolean | Promise<boolean>;
   /** Mount path. Default "/mcp". */
   path?: string;
   /** Sends remembered per connection id. Default 50. 0 disables. */
