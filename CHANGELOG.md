@@ -10,6 +10,14 @@ CI refuses a merge that changes `src/`, `schema/` or `package.json` without a ne
 - **MINOR** — a new feature, or a change to an existing feature that breaks just that feature.
 - **PATCH** — a fix or correction that requires no consumer code changes, or very minor ones.
 
+## [0.2.0] - 2026-08-24
+### Changed
+- Connections are identified by a server-assigned **UUID**, not a caller-supplied name. `identify` and `onDuplicate` are removed; every client is accepted (reject unwanted ones with an Elysia route guard before the handler). A connection now **holds all its request headers** (`connection.headers`, including `authorization`/`cookie` — treat a connection list as sensitive), and you address/find connections by id or by a header predicate.
+### Added
+- `connection.send(frame)` and `connection.close()`.
+- `connections.find(pred)` / `connections.filter(pred)`; `mcp.once(event)` (promise) and `mcp.off(event, fn)`.
+- Send history and `disconnect` reasons are now keyed by connection id (history no longer spans a reconnect — a new connection is a new id).
+
 ## [0.1.0] - 2026-08-24
 ### Added
 - `thatch()` — an Elysia plugin + handle for a central HTTP MCP server that many Claude Code sessions connect to by URL.

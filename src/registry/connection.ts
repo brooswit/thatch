@@ -3,15 +3,25 @@ import type { Frame } from "../protocol/frame.js";
 
 export interface HistoryEntry { at: number; frame: Frame; delivery: Delivery }
 
-export interface Connection<Meta = Record<string, unknown>> {
-  readonly name: string;
+/**
+ * A connected client. Identity is a server-assigned UUID — the library imposes
+ * no naming. Every header from the initialize request is held for the app to
+ * use however it likes (including `authorization`/`cookie`: treat a connection
+ * list as sensitive).
+ */
+export interface Connection {
+  readonly id: string;
+  readonly headers: Readonly<Record<string, string>>;
   readonly connectedAt: number;
   lastSeenAt: number;
-  readonly meta: Meta;
-  /** True while the client holds an open notification stream — only then can a pushed frame land (claim C2). */
+  /** True only while the client's notification stream is attached — a pushed frame can land (claim C2). */
   readonly channelReady: boolean;
-  /** Newest last. Includes refused sends. Survives `replace` — keyed by name, not by socket. */
+  /** This connection's sends, newest last, including refused ones. */
   readonly history: readonly HistoryEntry[];
+  /** Push a frame to this connection. Sugar for `mcp.send(id, frame)`, routed by id so a stale reference refuses cleanly. */
+  send(frame: Frame): Promise<Delivery>;
+  /** Disconnect this client. */
+  close(): Promise<void>;
 }
 
-export type DisconnectReason = "closed" | "replaced" | "error";
+export type DisconnectReason = "closed" | "error";

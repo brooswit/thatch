@@ -7,7 +7,7 @@ import type { Connection } from "../registry/connection.js";
 import type { ToolDef } from "./options.js";
 
 /** One connected client: its own McpServer + transport. Implements Pushable for the channel. */
-export class Session<Meta> implements Pushable {
+export class Session implements Pushable {
   readonly server: McpServer;
   readonly transport: WebStandardStreamableHTTPServerTransport;
 
@@ -21,13 +21,13 @@ export class Session<Meta> implements Pushable {
 
   onAttach(fn: (attached: boolean) => void): void { this.onAttachChange = fn; }
 
-  static async open<Meta>(opts: {
+  static async open(opts: {
     serverInfo: { name: string; version: string };
-    tools: Record<string, ToolDef<Meta, any>>;
-    connection: () => Connection<Meta>;
+    tools: Record<string, ToolDef<any>>;
+    connection: () => Connection;
     sessionId: string;
     onClose: () => void;
-  }): Promise<Session<Meta>> {
+  }): Promise<Session> {
     const server = new McpServer(opts.serverInfo, { capabilities: { ...CHANNEL_CAPABILITY, tools: {} } });
     for (const [name, def] of Object.entries(opts.tools)) {
       server.tool(name, def.description, def.input, async (args: unknown) => {

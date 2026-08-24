@@ -7,16 +7,19 @@ import { Elysia } from "elysia";
 import { thatch, z } from "@brooswit/thatch";
 
 const { plugin, mcp } = thatch({
-  identify: (req) => req.headers.get("x-connection-name"),   // names the connection; null rejects it
   tools: {
-    status: { description: "Fleet status", input: {}, handler: (_a, c) => `hello ${c.name}` },
+    status: { description: "Fleet status", input: {}, handler: (_a, c) => `hello ${c.id}` },
   },
 });
 
 const app = new Elysia().use(plugin).listen(3000);
 
-// push a message into a named session — from anywhere
-const d = await mcp.send("epic-kan-39", { content: "PR #296 approved", meta: { key: "KAN-39" } });
+// every client is accepted and gets a UUID; it holds all its request headers.
+mcp.on("connect", (c) => console.log("connected", c.id, c.headers["x-workspace"]));
+
+// address by a header predicate, then push into that session — from anywhere
+const c = mcp.connections.find((c) => c.headers["x-workspace"] === "epic/KAN-39");
+const d = await c?.send({ content: "PR #296 approved", meta: { key: "KAN-39" } });
 //  d: { claim: "C2" }  — a connected session's stream took it
 //     { claim: "refused", reason: "not-connected" | "no-channel-stream" | "bad-meta" | "closed-mid-send" }
 ```
@@ -24,7 +27,7 @@ const d = await mcp.send("epic-kan-39", { content: "PR #296 approved", meta: { k
 Claude Code connects with:
 
 ```
-claude mcp add --transport http fleet http://localhost:3000/mcp --header "x-connection-name: epic-kan-39"
+claude mcp add --transport http fleet http://localhost:3000/mcp --header "x-workspace: epic/KAN-39"
 ```
 
 ## Why the delivery type is not `void`
@@ -33,12 +36,11 @@ Pushing into a session can fail in ways the MCP SDK hides: a connection can be r
 
 ## API
 
-- `thatch(options)` → `{ plugin, mcp }` — `plugin` mounts the endpoint (default `/mcp`); `mcp` is the handle.
-- `options`: `identify(req)`, `onDuplicate` (`"replace"` default | `"reject"`), `history` (default 50), `tools`, `path`, `serverInfo`.
-- `mcp.connections`: `list()`, `get(name)`, `has(name)`, `count()`, `waitFor(name, { timeoutMs })`.
-- `mcp.send(name, frame)`, `mcp.sendMany(names, frame)`, `mcp.sendAll(frame, { where? })`.
-- `mcp.on("connect" | "disconnect" | "send", handler)`.
-- A `Connection` carries `name`, `connectedAt`, `lastSeenAt`, `meta`, `channelReady`, and `history`.
+- `thatch({ tools?, path?, history?, serverInfo? })` → `{ plugin, mcp }`. Every client is accepted and assigned a UUID; reject unwanted ones with an Elysia guard on the route.
+- `mcp.connections`: `list()`, `get(id)`, `has(id)`, `count()`, `find(pred)`, `filter(pred)`.
+- `mcp.send(id, frame)`, `mcp.sendMany(ids, frame)`, `mcp.sendAll(frame, { where? })`.
+- `mcp.on/once/off` for `connect` / `disconnect` / `send`.
+- A `Connection` carries `id`, `headers` (all of them), `connectedAt`, `lastSeenAt`, `channelReady`, `history`, and methods `send(frame)` / `close()`.
 - `import { FakeConnection } from "@brooswit/thatch/testing"` for tests.
 
 ## Layers
