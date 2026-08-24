@@ -39,7 +39,7 @@ Pushing into a session can fail in ways the MCP SDK hides: a connection can be r
 - `thatch({ tools?, auth?, path?, history?, serverInfo? })` → `{ plugin, mcp }`. Every client is accepted and assigned a UUID. Gate connections with `auth(req) => boolean` (default accepts all); it does not identify — an accepted client still gets a UUID and holds its headers.
 - `mcp.connections`: `list()`, `get(id)`, `has(id)`, `count()`, `find(pred)`, `filter(pred)`.
 - `mcp.send(id, frame)`, `mcp.sendMany(ids, frame)`, `mcp.sendAll(frame, { where? })`.
-- `mcp.on/once/off` for `connect` / `disconnect` / `send`.
+- `mcp.on/once/off` for `connect` / `disconnect`.
 - A `Connection` carries `id`, `headers` (all of them), `connectedAt`, and methods `send(frame)` / `close()`. No built-in history, `lastSeenAt`, or readiness flag — subscribe to the `send` event and key it however you like; the `send` result tells you if a frame could not land.
 - `import { FakeConnection } from "@brooswit/thatch/testing"` for tests.
 

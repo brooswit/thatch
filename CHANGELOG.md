@@ -10,6 +10,10 @@ CI refuses a merge that changes `src/`, `schema/` or `package.json` without a ne
 - **MINOR** — a new feature, or a change to an existing feature that breaks just that feature.
 - **PATCH** — a fix or correction that requires no consumer code changes, or very minor ones.
 
+## [0.6.0] - 2026-08-24
+### Removed
+- The `send` event (`mcp.on("send", ...)`). A send is something you initiate and already get a `Delivery` back from synchronously, so the event was redundant to the caller; a central audit of sends is better done at your call sites or by wrapping `mcp.send`. `connect` and `disconnect` — which happen *to* you — remain.
+
 ## [0.5.0] - 2026-08-24
 ### Removed
 - `connection.lastSeenAt` — convenience metadata nothing depended on; derive it from the `send` event if wanted.
