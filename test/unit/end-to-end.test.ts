@@ -3,17 +3,10 @@ import { Elysia } from "elysia";
 import { thatch, z, type Delivery, type McpHandle } from "../../src/index.js";
 import { FakeConnection } from "../../src/testing/index.js";
 
-type Meta = { role: string };
-
-/** A fresh server per test — no state leaks between cases. */
-function fresh(opts?: Partial<Parameters<typeof thatch<Meta>>[0]>) {
-  const { plugin, mcp } = thatch<Meta>({
-    identify: (req) => {
-      const n = req.headers.get("x-connection-name");
-      return n ? { name: n, role: req.headers.get("x-role") ?? "none" } : null;
-    },
+function fresh(opts?: Parameters<typeof thatch>[0]) {
+  const { plugin, mcp } = thatch({
     tools: {
-      echo: { description: "echo", input: { text: z.string() }, handler: ({ text }, c) => ({ text, from: c.name, role: c.meta.role }) },
+      echo: { description: "echo", input: { text: z.string() }, handler: ({ text }, c) => ({ text, id: c.id, ws: c.headers["x-workspace"] ?? null }) },
       fail: { description: "throws", input: {}, handler: () => { throw new Error("boom"); } },
     },
     ...(opts ?? {}),
@@ -21,88 +14,97 @@ function fresh(opts?: Partial<Parameters<typeof thatch<Meta>>[0]>) {
   const app = new Elysia().use(plugin).listen(0);
   return { mcp, base: `http://localhost:${app.server!.port}`, stop: async () => { await mcp.closeAll(); app.stop(); } };
 }
-
-/** connect and wait until the client's notification stream is up (channelReady) — no probe frames. */
-async function ready(mcp: McpHandle<Meta>, base: string, name: string, headers?: Record<string, string>) {
-  const c = await FakeConnection.connect(base, name, headers ? { headers } : {});
-  for (let i = 0; i < 200 && !mcp.connections.get(name)?.channelReady; i++) await Bun.sleep(10);
+async function ready(mcp: McpHandle, base: string, headers?: Record<string, string>) {
+  const c = await FakeConnection.connect(base, headers ? { headers } : {});
+  const id = c.sessionId!;
+  for (let i = 0; i < 200 && !mcp.connections.get(id)?.channelReady; i++) await Bun.sleep(10);
   return c;
 }
 
-describe("thatch end to end over real HTTP", () => {
-  test("connect populates the registry; tools list and call receive the connection", async () => {
+describe("thatch (uuid connections) end to end over real HTTP", () => {
+  test("every client is accepted, gets a uuid, and holds its headers", async () => {
     const { mcp, base, stop } = fresh();
-    const a = await FakeConnection.connect(base, "alpha", { headers: { "x-role": "supervisor" } });
-    expect(mcp.connections.list().map((c) => c.name)).toEqual(["alpha"]);
-    expect((await a.listTools()).map((t) => t.name).sort()).toEqual(["echo", "fail"]);
-    expect(await a.callTool("echo", { text: "hi" })).toEqual({ text: "hi", from: "alpha", role: "supervisor" });
+    const a = await FakeConnection.connect(base, { headers: { "x-workspace": "epic/KAN-39", authorization: "Bearer secret" } });
+    expect(mcp.connections.count()).toBe(1);
+    const c = mcp.connections.list()[0]!;
+    expect(c.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(c.id).toBe(a.sessionId!);
+    expect(c.headers["x-workspace"]).toBe("epic/KAN-39");
+    expect(c.headers["authorization"]).toBe("Bearer secret"); // held as-is; connection list is sensitive
+    expect(await a.callTool("echo", { text: "hi" })).toEqual({ text: "hi", id: c.id, ws: "epic/KAN-39" });
     await a.disconnect(); await stop();
   });
 
-  test("send is C2 and the frame arrives; bad meta and absent name refuse; history records all three by name", async () => {
+  test("find/filter by header; send by id and c.send both land; sendAll honours where", async () => {
     const { mcp, base, stop } = fresh();
-    const a = await ready(mcp, base, "beta");
-    expect(await mcp.send("beta", { content: "ping", meta: { k: "v" } })).toEqual({ claim: "C2" });
-    expect(await a.nextFrame()).toEqual({ content: "ping", meta: { k: "v" } });
-    expect(await mcp.send("beta", { content: "x", meta: { n: 1 as unknown as string } })).toMatchObject({ claim: "refused", reason: "bad-meta", keys: ["n"] });
-    expect(await mcp.send("nobody", { content: "x", meta: {} })).toEqual({ claim: "refused", reason: "not-connected" });
-    expect(mcp.connections.get("beta")!.history.map((h) => (h.delivery as Delivery).claim)).toEqual(["C2", "refused"]);
+    const a = await ready(mcp, base, { "x-role": "supervisor" });
+    const b = await ready(mcp, base, { "x-role": "worker" });
+    const sup = mcp.connections.find((c) => c.headers["x-role"] === "supervisor")!;
+    expect(sup.id).toBe(a.sessionId!);
+    expect(mcp.connections.filter((c) => c.headers["x-role"] === "worker").map((c) => c.id)).toEqual([b.sessionId!]);
+    expect(await mcp.send(sup.id, { content: "by-id", meta: {} })).toEqual({ claim: "C2" });
+    expect(await a.nextFrame()).toMatchObject({ content: "by-id" });
+    expect(await sup.send({ content: "by-conn", meta: { k: "v" } })).toEqual({ claim: "C2" });
+    expect(await a.nextFrame()).toEqual({ content: "by-conn", meta: { k: "v" } });
+    expect((await mcp.sendAll({ content: "all", meta: {} }, { where: (c) => c.headers["x-role"] === "worker" })).sent).toEqual([b.sessionId!]);
+    await a.disconnect(); await b.disconnect(); await stop();
+  });
+
+  test("refusals: bad meta, unknown id, and registered-but-no-stream; history is per id incl. refusals", async () => {
+    const { mcp, base, stop } = fresh();
+    const a = await ready(mcp, base);
+    const id = a.sessionId!;
+    expect(await mcp.send(id, { content: "ok", meta: {} })).toEqual({ claim: "C2" });
+    expect(await mcp.send(id, { content: "x", meta: { n: 1 as unknown as string } })).toMatchObject({ claim: "refused", reason: "bad-meta", keys: ["n"] });
+    expect(await mcp.send("no-such-uuid", { content: "x", meta: {} })).toEqual({ claim: "refused", reason: "not-connected" });
+    expect(mcp.connections.get(id)!.history.map((h) => (h.delivery as Delivery).claim)).toEqual(["C2", "refused"]);
     await a.disconnect(); await stop();
   });
 
-  test("a registered connection with no notification stream refuses as no-channel-stream, not a false C2", async () => {
+  test("no-channel-stream: a session that never opens its stream refuses, not a false C2", async () => {
     const { mcp, base, stop } = fresh();
     const r = await fetch(`${base}/mcp`, {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "x-connection-name": "silent" },
+      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "p", version: "0" } } }),
     });
     await r.text();
-    expect(mcp.connections.has("silent")).toBe(true);
-    expect(mcp.connections.get("silent")!.channelReady).toBe(false);
-    expect(await mcp.send("silent", { content: "x", meta: {} })).toEqual({ claim: "refused", reason: "no-channel-stream" });
+    const c = mcp.connections.list()[0]!;
+    expect(c.channelReady).toBe(false);
+    expect(await c.send({ content: "x", meta: {} })).toEqual({ claim: "refused", reason: "no-channel-stream" });
     await stop();
   });
 
-  test("identify() null → connect rejects (401); a throwing tool is an error, not a crash", async () => {
+  test("connect/disconnect/once events; c.close() disconnects and a stale reference refuses", async () => {
     const { mcp, base, stop } = fresh();
-    await expect(FakeConnection.connect(base, "", {})).rejects.toThrow();
-    const a = await FakeConnection.connect(base, "gamma");
+    const seen: string[] = [];
+    mcp.on("connect", (c) => seen.push("+" + c.id.slice(0, 4)));
+    const off = mcp.on("disconnect", (c, r) => seen.push(`-${c.id.slice(0, 4)}:${r}`));
+    const pending = mcp.once("connect");
+    const a = await ready(mcp, base);
+    expect((await pending).id).toBe(a.sessionId!);
+    const c = mcp.connections.get(a.sessionId!)!;
+    await c.close(); await Bun.sleep(30);
+    expect(mcp.connections.has(a.sessionId!)).toBe(false);
+    expect(await c.send({ content: "x", meta: {} })).toEqual({ claim: "refused", reason: "not-connected" }); // stale ref
+    expect(seen.some((s) => s.startsWith("+"))).toBe(true);
+    expect(seen.some((s) => s.includes(":closed"))).toBe(true);
+    off();
+    await a.disconnect().catch(() => {}); await stop();
+  });
+
+  test("a throwing tool is an error, not a crash; the connection stays", async () => {
+    const { mcp, base, stop } = fresh();
+    const a = await FakeConnection.connect(base);
     await expect(a.callTool("fail")).rejects.toThrow();
-    expect(mcp.connections.has("gamma")).toBe(true);
+    expect(mcp.connections.count()).toBe(1);
     await a.disconnect(); await stop();
   });
 
-  test("duplicate name: replace drops the old (reason=replaced) and routes to the new", async () => {
+  test("sendMany reports sent/refused by id", async () => {
     const { mcp, base, stop } = fresh();
-    const reasons: string[] = [];
-    mcp.on("disconnect", (_c, rs) => reasons.push(rs));
-    const a1 = await ready(mcp, base, "delta");
-    const a2 = await ready(mcp, base, "delta");
-    expect(mcp.connections.count()).toBe(1);
-    expect(reasons).toEqual(["replaced"]);
-    expect(await mcp.send("delta", { content: "to-new", meta: {} })).toEqual({ claim: "C2" });
-    expect(await a2.nextFrame()).toMatchObject({ content: "to-new" });
-    await a2.disconnect(); await a1.disconnect().catch(() => {}); await stop();
-  });
-
-  test("duplicate name: reject refuses the second connection", async () => {
-    const { mcp, base, stop } = fresh({ onDuplicate: "reject" });
-    const s1 = await FakeConnection.connect(base, "eps");
-    await expect(FakeConnection.connect(base, "eps")).rejects.toThrow();
-    expect(mcp.connections.count()).toBe(1);
-    await s1.disconnect(); await stop();
-  });
-
-  test("sendMany reports sent/refused; sendAll honours where; waitFor resolves then rejects on timeout", async () => {
-    const { mcp, base, stop } = fresh();
-    const p = mcp.connections.waitFor("zeta", { timeoutMs: 3000 });
-    const z1 = await ready(mcp, base, "zeta", { "x-role": "a" });
-    expect((await p).name).toBe("zeta");
-    const z2 = await ready(mcp, base, "eta", { "x-role": "b" });
-    expect(await mcp.sendMany(["zeta", "ghost"], { content: "m", meta: {} })).toEqual({ sent: ["zeta"], refused: [{ name: "ghost", reason: "not-connected" }] });
-    expect((await mcp.sendAll({ content: "all", meta: {} }, { where: (c) => c.meta.role === "b" })).sent).toEqual(["eta"]);
-    await expect(mcp.connections.waitFor("never", { timeoutMs: 50 })).rejects.toThrow(/not connected within/);
-    await z1.disconnect(); await z2.disconnect(); await stop();
+    const a = await ready(mcp, base);
+    expect(await mcp.sendMany([a.sessionId!, "ghost"], { content: "m", meta: {} })).toEqual({ sent: [a.sessionId!], refused: [{ id: "ghost", reason: "not-connected" }] });
+    await a.disconnect(); await stop();
   });
 });

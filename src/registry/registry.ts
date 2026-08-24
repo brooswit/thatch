@@ -1,82 +1,53 @@
 import type { Connection, DisconnectReason } from "./connection.js";
 import { History } from "./history.js";
 
-export type OnDuplicate = "replace" | "reject";
+export interface Entry<Handle> { record: Connection; handle: Handle }
 
-/** A live connection plus whatever the transport layer needs to reach it. */
-export interface Entry<Meta, Handle> { record: Connection<Meta>; handle: Handle }
-
-export interface RegistryEvents<Meta> {
-  connect: (c: Connection<Meta>) => void;
-  disconnect: (c: Connection<Meta>, reason: DisconnectReason) => void;
+export interface RegistryEvents {
+  connect: (c: Connection) => void;
+  disconnect: (c: Connection, reason: DisconnectReason) => void;
 }
 
-/**
- * The registry IS the source of truth for "who is connected". There is no
- * separate liveness probe: a name is present iff its transport is open.
- */
-export class Registry<Meta = Record<string, unknown>, Handle = unknown> {
-  private entries = new Map<string, Entry<Meta, Handle>>();
-  private waiters = new Map<string, Array<(c: Connection<Meta>) => void>>();
-  private listeners: { [K in keyof RegistryEvents<Meta>]: RegistryEvents<Meta>[K][] } = { connect: [], disconnect: [] };
+/** The registry IS the source of truth for who is connected: a UUID is present iff its transport is open. */
+export class Registry<Handle = unknown> {
+  private entries = new Map<string, Entry<Handle>>();
+  private listeners: { [K in keyof RegistryEvents]: RegistryEvents[K][] } = { connect: [], disconnect: [] };
   readonly history: History;
 
-  constructor(private readonly opts: { onDuplicate: OnDuplicate; history: number }) {
-    this.history = new History(opts.history);
-  }
+  constructor(historyLimit: number) { this.history = new History(historyLimit); }
 
-  /** Returns the entry, or null if rejected as a duplicate. `close` is invoked on a replaced handle. */
-  add(name: string, meta: Meta, handle: Handle, close: (h: Handle) => void, channelReady: (h: Handle) => boolean = () => false): Entry<Meta, Handle> | null {
-    const existing = this.entries.get(name);
-    if (existing) {
-      if (this.opts.onDuplicate === "reject") return null;
-      this.remove(name, "replaced");
-      close(existing.handle);
-    }
-    const self = this;
-    const now = Date.now();
-    const record: Connection<Meta> = {
-      name, connectedAt: now, lastSeenAt: now, meta,
-      get channelReady() { return channelReady(handle); },
-      get history() { return self.history.get(name); },
-    };
-    const entry = { record, handle };
-    this.entries.set(name, entry);
-    for (const l of this.listeners.connect) l(record);
-    for (const w of this.waiters.get(name) ?? []) w(record);
-    this.waiters.delete(name);
+  /** Register a live connection. `build` turns the id into the public record (so it can close via the owning plugin). */
+  add(id: string, handle: Handle, build: (id: string) => Connection): Entry<Handle> {
+    const entry = { record: build(id), handle };
+    this.entries.set(id, entry);
+    for (const l of this.listeners.connect) l(entry.record);
     return entry;
   }
 
-  remove(name: string, reason: DisconnectReason): void {
-    const e = this.entries.get(name);
+  remove(id: string, reason: DisconnectReason): void {
+    const e = this.entries.get(id);
     if (!e) return;
-    this.entries.delete(name);
+    this.entries.delete(id);
     for (const l of this.listeners.disconnect) l(e.record, reason);
   }
 
-  touch(name: string): void { const e = this.entries.get(name); if (e) e.record.lastSeenAt = Date.now(); }
-  entry(name: string): Entry<Meta, Handle> | undefined { return this.entries.get(name); }
-  get(name: string): Connection<Meta> | undefined { return this.entries.get(name)?.record; }
-  has(name: string): boolean { return this.entries.has(name); }
+  touch(id: string): void { const e = this.entries.get(id); if (e) e.record.lastSeenAt = Date.now(); }
+  entry(id: string): Entry<Handle> | undefined { return this.entries.get(id); }
+  get(id: string): Connection | undefined { return this.entries.get(id)?.record; }
+  has(id: string): boolean { return this.entries.has(id); }
   count(): number { return this.entries.size; }
-  list(): Connection<Meta>[] { return [...this.entries.values()].map((e) => e.record); }
+  list(): Connection[] { return [...this.entries.values()].map((e) => e.record); }
+  find(pred: (c: Connection) => boolean): Connection | undefined { return this.list().find(pred); }
+  filter(pred: (c: Connection) => boolean): Connection[] { return this.list().filter(pred); }
 
-  waitFor(name: string, opts: { timeoutMs: number }): Promise<Connection<Meta>> {
-    const now = this.get(name);
-    if (now) return Promise.resolve(now);
-    return new Promise((resolve, reject) => {
-      const t = setTimeout(() => {
-        this.waiters.set(name, (this.waiters.get(name) ?? []).filter((w) => w !== done));
-        reject(new Error(`waitFor(${name}): not connected within ${opts.timeoutMs}ms`));
-      }, opts.timeoutMs);
-      const done = (c: Connection<Meta>) => { clearTimeout(t); resolve(c); };
-      this.waiters.set(name, [...(this.waiters.get(name) ?? []), done]);
-    });
+  on<K extends keyof RegistryEvents>(event: K, fn: RegistryEvents[K]): () => void {
+    this.listeners[event].push(fn);
+    return () => this.off(event, fn);
   }
-
-  on<K extends keyof RegistryEvents<Meta>>(event: K, fn: RegistryEvents<Meta>[K]): () => void {
-    (this.listeners[event] as RegistryEvents<Meta>[K][]).push(fn);
-    return () => { const a = this.listeners[event] as RegistryEvents<Meta>[K][]; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); };
+  off<K extends keyof RegistryEvents>(event: K, fn: RegistryEvents[K]): void {
+    const a = this.listeners[event]; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1);
+  }
+  once<K extends keyof RegistryEvents>(event: K): Promise<Parameters<RegistryEvents[K]>[0]> {
+    return new Promise((resolve) => { const off = this.on(event, ((c: Connection) => { off(); resolve(c); }) as RegistryEvents[K]); });
   }
 }

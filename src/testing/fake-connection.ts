@@ -13,11 +13,11 @@ export class FakeConnection {
   private waiters: Array<(f: Frame) => void> = [];
   private constructor(readonly client: Client, private readonly transport: StreamableHTTPClientTransport) {}
 
-  static async connect(baseUrl: string | URL, name: string, opts: { path?: string; headers?: Record<string, string>; header?: string } = {}) {
+  static async connect(baseUrl: string | URL, opts: { path?: string; headers?: Record<string, string> } = {}) {
     const url = new URL(opts.path ?? "/mcp", baseUrl);
-    const headers = { [opts.header ?? "x-connection-name"]: name, ...(opts.headers ?? {}) };
+    const headers = { ...(opts.headers ?? {}) };
     const transport = new StreamableHTTPClientTransport(url, { requestInit: { headers } });
-    const client = new Client({ name: `fake:${name}`, version: "0" }, { capabilities: { experimental: { "claude/channel": {} } } });
+    const client = new Client({ name: "fake-connection", version: "0" }, { capabilities: { experimental: { "claude/channel": {} } } });
     const fc = new FakeConnection(client, transport);
     client.setNotificationHandler(z.object({ method: z.literal(CHANNEL_METHOD), params: z.object({ content: z.string(), meta: z.record(z.string(), z.string()) }) }), (n) => {
       const f = n.params as Frame; const w = fc.waiters.shift(); w ? w(f) : fc.frames.push(f);
@@ -31,6 +31,7 @@ export class FakeConnection {
     if (this.frames.length) return Promise.resolve(this.frames.shift()!);
     return new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("no channel frame within " + timeoutMs + "ms")), timeoutMs); this.waiters.push((f) => { clearTimeout(t); res(f); }); });
   }
+  get sessionId(): string | undefined { return this.transport.sessionId; }
   async listTools() { return (await this.client.listTools()).tools; }
   async callTool(name: string, args: Record<string, unknown> = {}) {
     const r = await this.client.callTool({ name, arguments: args });

@@ -9,61 +9,76 @@ import { Session } from "./session.js";
 
 const SESSION_HEADER = "mcp-session-id";
 
-/** What `app.mcp` exposes. */
-export interface McpHandle<Meta> {
-  connections: Pick<Registry<Meta, Pushable>, "list" | "get" | "has" | "count" | "waitFor">;
-  send(name: string, frame: Frame): Promise<Delivery>;
-  sendMany(names: readonly string[], frame: Frame): ReturnType<Sender<Meta>["sendMany"]>;
-  sendAll(frame: Frame, opts?: { where?: (c: Connection<Meta>) => boolean }): ReturnType<Sender<Meta>["sendAll"]>;
-  on(event: "connect", fn: (c: Connection<Meta>) => void): () => void;
-  on(event: "disconnect", fn: (c: Connection<Meta>, reason: DisconnectReason) => void): () => void;
-  on(event: "send", fn: (c: Connection<Meta>, frame: Frame, delivery: Delivery) => void): () => void;
-  /** Tear down every session. */
+/** What `mcp` exposes to daemon-side code. */
+export interface McpHandle {
+  connections: {
+    list(): Connection[];
+    get(id: string): Connection | undefined;
+    has(id: string): boolean;
+    count(): number;
+    find(pred: (c: Connection) => boolean): Connection | undefined;
+    filter(pred: (c: Connection) => boolean): Connection[];
+  };
+  send(id: string, frame: Frame): Promise<Delivery>;
+  sendMany(ids: readonly string[], frame: Frame): ReturnType<Sender["sendMany"]>;
+  sendAll(frame: Frame, opts?: { where?: (c: Connection) => boolean }): ReturnType<Sender["sendAll"]>;
+  on(event: "connect", fn: (c: Connection) => void): () => void;
+  on(event: "disconnect", fn: (c: Connection, reason: DisconnectReason) => void): () => void;
+  on(event: "send", fn: (c: Connection, frame: Frame, delivery: Delivery) => void): () => void;
+  once(event: "connect" | "disconnect"): Promise<Connection>;
+  off(event: "connect" | "disconnect" | "send", fn: (...a: any[]) => void): void;
   closeAll(): Promise<void>;
 }
 
-function build<Meta = Record<string, unknown>>(o: McpOptions<Meta>) {
+function build(o: McpOptions) {
   const path = o.path ?? "/mcp";
-  const registry = new Registry<Meta, Session<Meta>>({ onDuplicate: o.onDuplicate ?? "replace", history: o.history ?? 50 });
-  const sender = new Sender<Meta>(registry as unknown as Registry<Meta, Pushable>);
-  const bySession = new Map<string, string>(); // session id → name
+  const registry = new Registry<Session>(o.history ?? 50);
+  const sender = new Sender(registry as unknown as Registry<Pushable>);
+  const sessions = new Map<string, Session>(); // id → session
   const serverInfo = o.serverInfo ?? { name: "thatch", version: "0" };
+
+  const closeById = async (id: string) => { const s = sessions.get(id); if (s) { sessions.delete(id); registry.remove(id, "closed"); await s.close(); } };
 
   async function fetchHandler(req: Request): Promise<Response> {
     const sid = req.headers.get(SESSION_HEADER);
-    // existing session → route to it
     if (sid) {
-      const name = bySession.get(sid);
-      const entry = name ? registry.entry(name) : undefined;
+      const entry = registry.entry(sid);
       if (!entry) return new Response(JSON.stringify({ error: "unknown session" }), { status: 404, headers: { "content-type": "application/json" } });
-      registry.touch(name!);
+      registry.touch(sid);
       return entry.handle.handle(req);
     }
-    // new connection: only an initialize POST may open one
     if (req.method !== "POST") return new Response("session required", { status: 400 });
-    const id = await o.identify(req);
-    const name = typeof id === "string" ? id : id?.name;
-    if (!name) return new Response(JSON.stringify({ error: "identify() rejected this connection" }), { status: 401, headers: { "content-type": "application/json" } });
-    const meta = (typeof id === "string" ? {} : (({ name: _n, ...rest }) => rest)(id!)) as Meta;
-    const sessionId = crypto.randomUUID();
-    const session = await Session.open<Meta>({
-      serverInfo, tools: o.tools ?? {}, sessionId,
-      connection: () => registry.get(name)!,
-      onClose: () => { if (bySession.get(sessionId) === name) { bySession.delete(sessionId); registry.remove(name, "closed"); } },
+    const id = crypto.randomUUID();
+    const headers: Record<string, string> = {};
+    req.headers.forEach((v, k) => { headers[k] = v; });
+    const session = await Session.open({
+      serverInfo, tools: o.tools ?? {}, sessionId: id,
+      connection: () => registry.get(id)!,
+      onClose: () => { void closeById(id); },
     });
-    const entry = registry.add(name, meta, session, (old) => { void old.close(); }, (h) => h.channelAttached);
-    if (!entry) { await session.close(); return new Response(JSON.stringify({ error: `"${name}" is already connected` }), { status: 409, headers: { "content-type": "application/json" } }); }
-    bySession.set(sessionId, name);
+    registry.add(id, session, (cid) => {
+      const now = Date.now();
+      return {
+        id: cid, headers, connectedAt: now, lastSeenAt: now,
+        get channelReady() { return session.channelAttached; },
+        get history() { return registry.history.get(cid); },
+        send: (frame: Frame) => sender.send(cid, frame),
+        close: () => closeById(cid),
+      };
+    });
+    sessions.set(id, session);
     return session.handle(req);
   }
 
-  const handle: McpHandle<Meta> = {
+  const handle: McpHandle = {
     connections: registry,
-    send: (n, f) => sender.send(n, f),
-    sendMany: (n, f) => sender.sendMany(n, f),
+    send: (id, f) => sender.send(id, f),
+    sendMany: (ids, f) => sender.sendMany(ids, f),
     sendAll: (f, opts) => sender.sendAll(f, opts),
-    on: ((event: string, fn: any) => event === "send" ? sender.onSend(fn) : registry.on(event as "connect" | "disconnect", fn)) as McpHandle<Meta>["on"],
-    closeAll: async () => { for (const c of registry.list()) { const e = registry.entry(c.name); registry.remove(c.name, "closed"); await e?.handle.close(); } },
+    on: ((event: string, fn: any) => event === "send" ? sender.onSend(fn) : registry.on(event as "connect" | "disconnect", fn)) as McpHandle["on"],
+    once: (event) => registry.once(event),
+    off: ((event: string, fn: any) => event === "send" ? undefined : registry.off(event as "connect" | "disconnect", fn)) as McpHandle["off"],
+    closeAll: async () => { for (const c of registry.list()) await closeById(c.id); },
   };
 
   const plugin = new Elysia({ name: "thatch" }).all(path, (ctx) => fetchHandler(ctx.request));
@@ -73,14 +88,15 @@ function build<Meta = Record<string, unknown>>(o: McpOptions<Meta>) {
 /**
  * Build a thatch MCP endpoint.
  *
- *   const { plugin, mcp } = thatch({ identify, tools });
+ *   const { plugin, mcp } = thatch({ tools });
  *   const app = new Elysia().use(plugin).listen(3000);
- *   await mcp.send("epic-kan-39", { content: "...", meta: {} });
+ *   const c = await mcp.once("connect");
+ *   await c.send({ content: "welcome", meta: {} });
  *
- * `plugin` mounts the endpoint (default `/mcp`); `mcp` is the handle daemon-side
- * code holds — registry, sends, events — usable without a reference to the app.
+ * Every client is accepted and gets a UUID; it holds all its request headers.
+ * Reject unwanted clients with an Elysia guard on the route, before this handler.
  */
-export function thatch<Meta = Record<string, unknown>>(o: McpOptions<Meta>): { plugin: Elysia; mcp: McpHandle<Meta> } {
-  const { plugin, mcp } = build<Meta>(o);
+export function thatch(o: McpOptions = {}): { plugin: Elysia; mcp: McpHandle } {
+  const { plugin, mcp } = build(o);
   return { plugin: plugin as Elysia, mcp };
 }
