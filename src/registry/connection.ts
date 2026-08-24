@@ -11,9 +11,6 @@ export interface Connection {
   readonly id: string;
   readonly headers: Readonly<Record<string, string>>;
   readonly connectedAt: number;
-  lastSeenAt: number;
-  /** True only while the client's notification stream is attached — a pushed frame can land (claim C2). */
-  readonly channelReady: boolean;
   /** Push a frame to this connection. Sugar for `mcp.send(id, frame)`, routed by id so a stale reference refuses cleanly. */
   send(frame: Frame): Promise<Delivery>;
   /** Disconnect this client. */

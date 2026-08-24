@@ -27,7 +27,6 @@ export class Registry<Handle = unknown> {
     for (const l of this.listeners.disconnect) l(e.record, reason);
   }
 
-  touch(id: string): void { const e = this.entries.get(id); if (e) e.record.lastSeenAt = Date.now(); }
   entry(id: string): Entry<Handle> | undefined { return this.entries.get(id); }
   get(id: string): Connection | undefined { return this.entries.get(id)?.record; }
   has(id: string): boolean { return this.entries.has(id); }

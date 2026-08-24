@@ -3,7 +3,7 @@ import { Registry } from "../../src/registry/registry.js";
 import type { Connection } from "../../src/registry/connection.js";
 
 const rec = (id: string, extra: Partial<Connection> = {}): Connection => ({
-  id, headers: {}, connectedAt: 0, lastSeenAt: 0, channelReady: false,
+  id, headers: {}, connectedAt: 0,
   send: async () => ({ claim: "not-connected" as never }), close: async () => {}, ...extra,
 });
 
@@ -24,8 +24,6 @@ describe("Registry (uuid-keyed)", () => {
     const reasons: string[] = []; r.on("disconnect", (_c, why) => reasons.push(why));
     r.remove("ghost", "closed"); expect(reasons).toEqual([]);
     r.add("a", {}, (id) => rec(id));
-    const t0 = r.get("a")!.lastSeenAt; await Bun.sleep(2); r.touch("a");
-    expect(r.get("a")!.lastSeenAt).toBeGreaterThanOrEqual(t0);
     r.remove("a", "error"); expect(reasons).toEqual(["error"]); expect(r.count()).toBe(0);
   });
   test("on returns an unsubscribe; off removes; once resolves on the next event", async () => {

@@ -10,6 +10,11 @@ CI refuses a merge that changes `src/`, `schema/` or `package.json` without a ne
 - **MINOR** — a new feature, or a change to an existing feature that breaks just that feature.
 - **PATCH** — a fix or correction that requires no consumer code changes, or very minor ones.
 
+## [0.5.0] - 2026-08-24
+### Removed
+- `connection.lastSeenAt` — convenience metadata nothing depended on; derive it from the `send` event if wanted.
+- `connection.channelReady` (the public getter). Stream-attachment is still tracked internally — it is what keeps `C2` honest and lets `send` return `no-channel-stream` — but it is no longer exposed. Use the `send` result as the signal. (If the connect→send readiness race bites in practice, a `ready` event is the fix, not a pollable flag.)
+
 ## [0.4.0] - 2026-08-24
 ### Removed
 - Per-connection send history (`connection.history`, the `history` option, `HistoryEntry`). The UUID redesign meant it no longer spanned a reconnect, which was its whole reason to exist; and the `send` event `(connection, frame, delivery)` lets an app build exactly the history it wants — keyed by a header so it *does* survive reconnect. The library version was strictly weaker, so it is gone.
