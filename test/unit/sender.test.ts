@@ -4,9 +4,9 @@ import { Registry } from "../../src/registry/registry.js";
 import type { Connection } from "../../src/registry/connection.js";
 
 function rig() {
-  const r = new Registry<{ channelAttached: boolean; notify: any }>(10);
+  const r = new Registry<{ channelAttached: boolean; notify: any }>();
   const s = new Sender(r as any);
-  const rec = (id: string): Connection => ({ id, headers: {}, connectedAt: 0, lastSeenAt: 0, channelReady: true, history: [], send: async () => ({ claim: "C2" }), close: async () => {} });
+  const rec = (id: string): Connection => ({ id, headers: {}, connectedAt: 0, lastSeenAt: 0, channelReady: true, send: async () => ({ claim: "C2" }), close: async () => {} });
   const add = (id: string, opts: { attached?: boolean; throws?: boolean } = {}) => {
     const h = { channelAttached: opts.attached ?? true, notify: opts.throws ? () => Promise.reject(new Error("gone")) : () => Promise.resolve() };
     r.add(id, h as any, rec);
@@ -16,10 +16,9 @@ function rig() {
 }
 
 describe("Sender (uuid)", () => {
-  test("attached → C2, recorded in history", async () => {
+  test("attached → C2, still C2", async () => {
     const { r, s, add } = rig(); add("a");
     expect(await s.send("a", { content: "x", meta: {} })).toEqual({ claim: "C2" });
-    expect(r.history.get("a").at(-1)!.delivery).toEqual({ claim: "C2" });
   });
   test("bad meta before touching the handle", async () => {
     const { s, add } = rig(); add("a");
@@ -28,7 +27,6 @@ describe("Sender (uuid)", () => {
   test("absent id → not-connected, recorded by id", async () => {
     const { r, s } = rig();
     expect(await s.send("ghost", { content: "x", meta: {} })).toEqual({ claim: "refused", reason: "not-connected" });
-    expect(r.history.get("ghost").at(-1)!.delivery).toMatchObject({ reason: "not-connected" });
   });
   test("connected but no stream → no-channel-stream", async () => {
     const { s, add } = rig(); add("a", { attached: false });

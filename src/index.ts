@@ -1,6 +1,6 @@
 export { thatch, type McpHandle } from "./plugin/mcp.js";
 export type { McpOptions, ToolDef } from "./plugin/options.js";
-export type { Connection, HistoryEntry, DisconnectReason } from "./registry/connection.js";
+export type { Connection, DisconnectReason } from "./registry/connection.js";
 export type { Frame } from "./protocol/frame.js";
 export { validateFrame, badMetaKeys } from "./protocol/frame.js";
 export type { Delivery } from "./protocol/delivery.js";

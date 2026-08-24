@@ -32,7 +32,7 @@ export interface McpHandle {
 
 function build(o: McpOptions) {
   const path = o.path ?? "/mcp";
-  const registry = new Registry<Session>(o.history ?? 50);
+  const registry = new Registry<Session>();
   const sender = new Sender(registry as unknown as Registry<Pushable>);
   const sessions = new Map<string, Session>(); // id → session
   const serverInfo = o.serverInfo ?? { name: "thatch", version: "0" };
@@ -62,7 +62,6 @@ function build(o: McpOptions) {
       return {
         id: cid, headers, connectedAt: now, lastSeenAt: now,
         get channelReady() { return session.channelAttached; },
-        get history() { return registry.history.get(cid); },
         send: (frame: Frame) => sender.send(cid, frame),
         close: () => closeById(cid),
       };

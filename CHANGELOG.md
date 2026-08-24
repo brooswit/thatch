@@ -10,6 +10,10 @@ CI refuses a merge that changes `src/`, `schema/` or `package.json` without a ne
 - **MINOR** — a new feature, or a change to an existing feature that breaks just that feature.
 - **PATCH** — a fix or correction that requires no consumer code changes, or very minor ones.
 
+## [0.4.0] - 2026-08-24
+### Removed
+- Per-connection send history (`connection.history`, the `history` option, `HistoryEntry`). The UUID redesign meant it no longer spanned a reconnect, which was its whole reason to exist; and the `send` event `(connection, frame, delivery)` lets an app build exactly the history it wants — keyed by a header so it *does* survive reconnect. The library version was strictly weaker, so it is gone.
+
 ## [0.3.0] - 2026-08-24
 ### Added
 - `auth(req) => boolean | Promise<boolean>` option: a gate run when a client connects — return false to refuse it (401). Default accepts everyone. It is a gate, not identity: an accepted client still gets a UUID and holds its headers.

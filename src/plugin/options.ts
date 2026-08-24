@@ -17,8 +17,6 @@ export interface McpOptions {
   auth?: (req: Request) => boolean | Promise<boolean>;
   /** Mount path. Default "/mcp". */
   path?: string;
-  /** Sends remembered per connection id. Default 50. 0 disables. */
-  history?: number;
   /** The tools. The ONLY way a tool exists. */
   tools?: Record<string, ToolDef<any>>;
   /** Reported to clients at initialize. */
