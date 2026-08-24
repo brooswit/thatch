@@ -1,0 +1,1 @@
+{ "mcpServers": { "thatchlive": { "type": "http", "url": "http://localhost:41414/mcp" } } }

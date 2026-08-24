@@ -30,6 +30,19 @@ Claude Code connects with:
 claude mcp add --transport http fleet http://localhost:3000/mcp --header "x-workspace: epic/KAN-39"
 ```
 
+## Receiving channel messages in Claude Code
+
+thatch pushes `notifications/claude/channel`. For a session to *render* it, Claude Code must opt in:
+
+- Launch it **interactively** (not `claude -p`) with `--channels server:<name>`, e.g.
+  `claude --mcp-config mcp.json --channels server:thatch`. A pushed frame raises a permission
+  prompt the user accepts; headless `-p` has no acceptor and skips channels.
+- On claude.ai **Teams/Enterprise**, channel notifications are org-gated (default off) and the
+  org must enable them; Console accounts default on.
+
+`test/live/channel-render.md` is a by-hand proof. Everything up to the frame leaving the server is
+covered by the automated suite; this last hop is interactive-only.
+
 ## Why the delivery type is not `void`
 
 Pushing into a session can fail in ways the MCP SDK hides: a connection can be registered while its notification stream isn't attached, in which case the SDK drops the frame silently. `thatch` refuses that out loud (`no-channel-stream`) and only claims `C2` when a stream is actually there to carry the frame. `C3` (entered the transcript) and `C4` (the model read it) are not observable, so no API here pretends to them.
