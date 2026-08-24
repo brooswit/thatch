@@ -48,6 +48,7 @@ function build(o: McpOptions) {
       return entry.handle.handle(req);
     }
     if (req.method !== "POST") return new Response("session required", { status: 400 });
+    if (!(await (o.auth ?? (() => true))(req))) return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
     const id = crypto.randomUUID();
     const headers: Record<string, string> = {};
     req.headers.forEach((v, k) => { headers[k] = v; });

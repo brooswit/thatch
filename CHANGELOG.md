@@ -10,6 +10,10 @@ CI refuses a merge that changes `src/`, `schema/` or `package.json` without a ne
 - **MINOR** — a new feature, or a change to an existing feature that breaks just that feature.
 - **PATCH** — a fix or correction that requires no consumer code changes, or very minor ones.
 
+## [0.3.0] - 2026-08-24
+### Added
+- `auth(req) => boolean | Promise<boolean>` option: a gate run when a client connects — return false to refuse it (401). Default accepts everyone. It is a gate, not identity: an accepted client still gets a UUID and holds its headers.
+
 ## [0.2.0] - 2026-08-24
 ### Changed
 - Connections are identified by a server-assigned **UUID**, not a caller-supplied name. `identify` and `onDuplicate` are removed; every client is accepted (reject unwanted ones with an Elysia route guard before the handler). A connection now **holds all its request headers** (`connection.headers`, including `authorization`/`cookie` — treat a connection list as sensitive), and you address/find connections by id or by a header predicate.

@@ -108,3 +108,25 @@ describe("thatch (uuid connections) end to end over real HTTP", () => {
     await a.disconnect(); await stop();
   });
 });
+
+describe("thatch auth hook", () => {
+  test("auth returning false refuses the connection (401); true (default) accepts", async () => {
+    const { plugin, mcp } = thatch({ auth: (req) => req.headers.get("x-key") === "let-me-in" });
+    const app = new Elysia().use(plugin).listen(0);
+    const base = `http://localhost:${app.server!.port}`;
+    await expect(FakeConnection.connect(base, { headers: { "x-key": "nope" } })).rejects.toThrow();
+    expect(mcp.connections.count()).toBe(0);
+    const ok = await FakeConnection.connect(base, { headers: { "x-key": "let-me-in" } });
+    expect(mcp.connections.count()).toBe(1);
+    await ok.disconnect(); await mcp.closeAll(); app.stop();
+  });
+  test("an async auth hook is awaited", async () => {
+    const { plugin, mcp } = thatch({ auth: async (req) => { await Bun.sleep(1); return req.headers.get("x-ok") === "1"; } });
+    const app = new Elysia().use(plugin).listen(0);
+    const base = `http://localhost:${app.server!.port}`;
+    await expect(FakeConnection.connect(base, { headers: {} })).rejects.toThrow();
+    const ok = await FakeConnection.connect(base, { headers: { "x-ok": "1" } });
+    expect(mcp.connections.count()).toBe(1);
+    await ok.disconnect(); await mcp.closeAll(); app.stop();
+  });
+});
