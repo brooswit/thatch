@@ -1,5 +1,4 @@
 import type { Connection, DisconnectReason } from "./connection.js";
-import { History } from "./history.js";
 
 export interface Entry<Handle> { record: Connection; handle: Handle }
 
@@ -12,9 +11,6 @@ export interface RegistryEvents {
 export class Registry<Handle = unknown> {
   private entries = new Map<string, Entry<Handle>>();
   private listeners: { [K in keyof RegistryEvents]: RegistryEvents[K][] } = { connect: [], disconnect: [] };
-  readonly history: History;
-
-  constructor(historyLimit: number) { this.history = new History(historyLimit); }
 
   /** Register a live connection. `build` turns the id into the public record (so it can close via the owning plugin). */
   add(id: string, handle: Handle, build: (id: string) => Connection): Entry<Handle> {

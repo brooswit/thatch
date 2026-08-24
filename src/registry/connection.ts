@@ -1,8 +1,6 @@
 import type { Delivery } from "../protocol/delivery.js";
 import type { Frame } from "../protocol/frame.js";
 
-export interface HistoryEntry { at: number; frame: Frame; delivery: Delivery }
-
 /**
  * A connected client. Identity is a server-assigned UUID — the library imposes
  * no naming. Every header from the initialize request is held for the app to
@@ -16,8 +14,6 @@ export interface Connection {
   lastSeenAt: number;
   /** True only while the client's notification stream is attached — a pushed frame can land (claim C2). */
   readonly channelReady: boolean;
-  /** This connection's sends, newest last, including refused ones. */
-  readonly history: readonly HistoryEntry[];
   /** Push a frame to this connection. Sugar for `mcp.send(id, frame)`, routed by id so a stale reference refuses cleanly. */
   send(frame: Frame): Promise<Delivery>;
   /** Disconnect this client. */

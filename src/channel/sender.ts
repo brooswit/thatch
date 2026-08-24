@@ -25,7 +25,6 @@ export class Sender {
         : await entry.handle.notify(CHANNEL_METHOD, { content: frame.content, meta: frame.meta })
             .then((): Delivery => ({ claim: "C2" }))
             .catch((e): Delivery => ({ claim: "refused", reason: "closed-mid-send", detail: String(e?.message ?? e) }));
-    this.registry.history.push(id, { at: Date.now(), frame, delivery });
     if (entry) { this.registry.touch(id); for (const l of this.listeners) l(entry.record, frame, delivery); }
     return delivery;
   }

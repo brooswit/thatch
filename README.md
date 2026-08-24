@@ -40,7 +40,7 @@ Pushing into a session can fail in ways the MCP SDK hides: a connection can be r
 - `mcp.connections`: `list()`, `get(id)`, `has(id)`, `count()`, `find(pred)`, `filter(pred)`.
 - `mcp.send(id, frame)`, `mcp.sendMany(ids, frame)`, `mcp.sendAll(frame, { where? })`.
 - `mcp.on/once/off` for `connect` / `disconnect` / `send`.
-- A `Connection` carries `id`, `headers` (all of them), `connectedAt`, `lastSeenAt`, `channelReady`, `history`, and methods `send(frame)` / `close()`.
+- A `Connection` carries `id`, `headers` (all of them), `connectedAt`, `lastSeenAt`, `channelReady`, and methods `send(frame)` / `close()`. (No built-in history — subscribe to the `send` event and key it however you like.)
 - `import { FakeConnection } from "@brooswit/thatch/testing"` for tests.
 
 ## Layers

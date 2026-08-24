@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Elysia } from "elysia";
-import { thatch, z, type Delivery, type McpHandle } from "../../src/index.js";
+import { thatch, z, type McpHandle } from "../../src/index.js";
 import { FakeConnection } from "../../src/testing/index.js";
 
 function fresh(opts?: Parameters<typeof thatch>[0]) {
@@ -50,14 +50,13 @@ describe("thatch (uuid connections) end to end over real HTTP", () => {
     await a.disconnect(); await b.disconnect(); await stop();
   });
 
-  test("refusals: bad meta, unknown id, and registered-but-no-stream; history is per id incl. refusals", async () => {
+  test("refusals: bad meta, unknown id, and registered-but-no-stream", async () => {
     const { mcp, base, stop } = fresh();
     const a = await ready(mcp, base);
     const id = a.sessionId!;
     expect(await mcp.send(id, { content: "ok", meta: {} })).toEqual({ claim: "C2" });
     expect(await mcp.send(id, { content: "x", meta: { n: 1 as unknown as string } })).toMatchObject({ claim: "refused", reason: "bad-meta", keys: ["n"] });
     expect(await mcp.send("no-such-uuid", { content: "x", meta: {} })).toEqual({ claim: "refused", reason: "not-connected" });
-    expect(mcp.connections.get(id)!.history.map((h) => (h.delivery as Delivery).claim)).toEqual(["C2", "refused"]);
     await a.disconnect(); await stop();
   });
 
