@@ -6,7 +6,7 @@ import type { Connection } from "../../src/registry/connection.js";
 function rig() {
   const r = new Registry<{ channelAttached: boolean; notify: any }>();
   const s = new Sender(r as any);
-  const rec = (id: string): Connection => ({ id, headers: {}, connectedAt: 0, lastSeenAt: 0, channelReady: true, send: async () => ({ claim: "C2" }), close: async () => {} });
+  const rec = (id: string): Connection => ({ id, headers: {}, connectedAt: 0, send: async () => ({ claim: "C2" }), close: async () => {} });
   const add = (id: string, opts: { attached?: boolean; throws?: boolean } = {}) => {
     const h = { channelAttached: opts.attached ?? true, notify: opts.throws ? () => Promise.reject(new Error("gone")) : () => Promise.resolve() };
     r.add(id, h as any, rec);

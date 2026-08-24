@@ -44,7 +44,6 @@ function build(o: McpOptions) {
     if (sid) {
       const entry = registry.entry(sid);
       if (!entry) return new Response(JSON.stringify({ error: "unknown session" }), { status: 404, headers: { "content-type": "application/json" } });
-      registry.touch(sid);
       return entry.handle.handle(req);
     }
     if (req.method !== "POST") return new Response("session required", { status: 400 });
@@ -58,10 +57,8 @@ function build(o: McpOptions) {
       onClose: () => { void closeById(id); },
     });
     registry.add(id, session, (cid) => {
-      const now = Date.now();
       return {
-        id: cid, headers, connectedAt: now, lastSeenAt: now,
-        get channelReady() { return session.channelAttached; },
+        id: cid, headers, connectedAt: Date.now(),
         send: (frame: Frame) => sender.send(cid, frame),
         close: () => closeById(cid),
       };

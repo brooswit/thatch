@@ -17,7 +17,9 @@ function fresh(opts?: Parameters<typeof thatch>[0]) {
 async function ready(mcp: McpHandle, base: string, headers?: Record<string, string>) {
   const c = await FakeConnection.connect(base, headers ? { headers } : {});
   const id = c.sessionId!;
-  for (let i = 0; i < 200 && !mcp.connections.get(id)?.channelReady; i++) await Bun.sleep(10);
+  // wait until a pushed frame can land: send a NUL-marked probe until it is C2, then drain it
+  for (let i = 0; i < 200 && (await mcp.send(id, { content: "\u0000", meta: {} })).claim !== "C2"; i++) await Bun.sleep(10);
+  await c.nextFrame(50).catch(() => {});
   return c;
 }
 
@@ -69,7 +71,7 @@ describe("thatch (uuid connections) end to end over real HTTP", () => {
     });
     await r.text();
     const c = mcp.connections.list()[0]!;
-    expect(c.channelReady).toBe(false);
+    // no public channelReady flag — the send result is the honest signal
     expect(await c.send({ content: "x", meta: {} })).toEqual({ claim: "refused", reason: "no-channel-stream" });
     await stop();
   });
