@@ -1,16 +1,16 @@
 {
   "name": "@brooswit/thatch",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Elysia plugin: a central HTTP MCP server with named connections and a channel for pushing messages into Claude Code sessions",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/brooswit/thatch.git"
+    "url": "git+https://github.com/brooswit-factory/thatch.git"
   },
-  "homepage": "https://github.com/brooswit/thatch#readme",
+  "homepage": "https://github.com/brooswit-factory/thatch#readme",
   "bugs": {
-    "url": "https://github.com/brooswit/thatch/issues"
+    "url": "https://github.com/brooswit-factory/thatch/issues"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
